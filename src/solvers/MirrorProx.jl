@@ -16,19 +16,19 @@ function primalv(θ::TA, W::TM, W∞::TWinf, ηt::R, ηp::R, r::TA, c::TA) where
     lse = logsumexp(-(0.5 * W .+ (W∞ .* θ)') ./ ηt, 2)
     primal_other = (0.5 * (1 - ηp / ηt)dot(W, r .* pμ) + sum(W∞ .* abs.(sum(r .* pμ, dims=1)' - c)) + (-W∞ * ηp / ηt * sum(c' * θ) - ηp * sum(r' * lse)) + ηp * dot(r, log.(r)))
     primal_val = (0.5 * dot(W, r .* pμ)
-                  + sum(W∞ .* abs.(sum(r .* pμ, dims=1)' - c))
-                  + ηp * dot(r, neg_entropy(pμ, dims=2)) + ηp * dot(r, log.(r)))
+        + sum(W∞ .* abs.(sum(r .* pμ, dims=1)' - c))
+        + ηp * dot(r, neg_entropy(pμ, dims=2)) + ηp * dot(r, log.(r)))
     # println(primal_val, " ", primal_other)
     # sleep(1)
     return 2(0.5 * dot(W, r .* pμ)
-             + sum(W∞ .* abs.(sum(r .* pμ, dims=1)' - c))
-             + ηp * dot(r, neg_entropy(pμ, dims=2)) + ηp * dot(r, log.(r)))
+        + sum(W∞ .* abs.(sum(r .* pμ, dims=1)' - c))
+        + ηp * dot(r, neg_entropy(pμ, dims=2)) + ηp * dot(r, log.(r)))
 end
 
 function primalv(p::TM, W::TM, W∞::TWinf, ηp::R, r::TA, c::TA) where {TA,TM,R,TWinf}
     return 2(0.5 * dot(W, r .* p) +
-             sum(W∞ .* abs.(sum(r .* p, dims=1)' - c)) +
-             ηp * dot(r, neg_entropy(p, dims=2)) + ηp * dot(r, log.(r)))
+        sum(W∞ .* abs.(sum(r .* p, dims=1)' - c)) +
+        ηp * dot(r, neg_entropy(p, dims=2)) + ηp * dot(r, log.(r)))
 end
 function PDMP(r::AbstractArray{R},
     c::AbstractArray{R},
@@ -198,7 +198,7 @@ function warp_logsumexp!(output::CuDeviceVector{T}, W::CuDeviceMatrix{T}, θ::Cu
             value = -(0.5 * W[i+local_id, tid_x] / W∞ * st + (θ[i+local_id])) / reg
             maxval = max(value, maxval)
         end
-        maxval = CUDA.reduce_warp(max, maxval)
+        maxval = CUDACore.reduce_warp(max, maxval)
         sync_warp()
         if local_id == 0
             output[tid_x] = maxval
@@ -214,7 +214,7 @@ function warp_logsumexp!(output::CuDeviceVector{T}, W::CuDeviceMatrix{T}, θ::Cu
             value = -(0.5 * W[i+local_id, tid_x] / W∞ * st + θ[i+local_id]) / reg
             local_acc += exp(value - maxval)
         end
-        local_acc2 = CUDA.reduce_warp(+, local_acc)
+        local_acc2 = CUDACore.reduce_warp(+, local_acc)
         if local_id == 0
             output[tid_x] = (log(local_acc2) + maxval)
         end
@@ -321,7 +321,7 @@ function residual_c!(output::CuDeviceVector{T}, r::CuDeviceArray{T}, W::CuDevice
                 local_acc += r[i+local_id] * exp(value)
             end
         end
-        local_acc2 = CUDA.reduce_warp(+, local_acc)
+        local_acc2 = CUDACore.reduce_warp(+, local_acc)
         if local_id == 0
             @inbounds begin
                 output[tid_x] = local_acc2

@@ -36,10 +36,10 @@ function residual_cellsim_opt!(
         local_acc = zero(T)
         cost_acc = zero(T)
         @inbounds φi = φ[tid_x]
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * step + 1
             @inbounds begin
-                muval = ψ[j + local_id]
+                muval = ψ[j+local_id]
                 costval = feature_cost_cuda(metric, data1, row_sums1, row_sqnorms1, row_means1, row_centered_sqnorms1, scale, tid_x, j + local_id, ncols)
             end
             value = muladd(costval, invreg, φi) + muval
@@ -50,7 +50,7 @@ function residual_cellsim_opt!(
         if Ntiles * step + local_id < M
             j = Ntiles * step + 1
             @inbounds begin
-                muval = ψ[j + local_id]
+                muval = ψ[j+local_id]
                 costval = feature_cost_cuda(metric, data1, row_sums1, row_sqnorms1, row_means1, row_centered_sqnorms1, scale, tid_x, j + local_id, ncols)
             end
             value = muladd(costval, invreg, φi) + muval
@@ -58,8 +58,8 @@ function residual_cellsim_opt!(
             local_acc += weight
             cost_acc += weight * costval
         end
-        local_acc = CUDA.reduce_warp(+, local_acc)
-        cost_acc = CUDA.reduce_warp(+, cost_acc)
+        local_acc = CUDA.CUDACore.reduce_warp(+, local_acc)
+        cost_acc = CUDA.CUDACore.reduce_warp(+, cost_acc)
         if local_id == 0
             @inbounds begin
                 output[tid_x] = marginal[tid_x] - local_acc
@@ -105,10 +105,10 @@ function warp_logsumexp_cellsim_opt!(
             return
         end
         maxval = T(-Inf)
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * step + 1
             @inbounds begin
-                muval = ψ[j + local_id]
+                muval = ψ[j+local_id]
                 costval = feature_cost_cuda(metric, data1, row_sums1, row_sqnorms1, row_means1, row_centered_sqnorms1, scale, tid_x, j + local_id, ncols)
             end
             maxval = max(maxval, muladd(costval, invreg, muval))
@@ -116,19 +116,19 @@ function warp_logsumexp_cellsim_opt!(
         if Ntiles * step + local_id < M
             j = Ntiles * step + 1
             @inbounds begin
-                muval = ψ[j + local_id]
+                muval = ψ[j+local_id]
                 costval = feature_cost_cuda(metric, data1, row_sums1, row_sqnorms1, row_means1, row_centered_sqnorms1, scale, tid_x, j + local_id, ncols)
             end
             maxval = max(maxval, muladd(costval, invreg, muval))
         end
-        maxval = CUDA.reduce_warp(max, maxval)
+        maxval = CUDA.CUDACore.reduce_warp(max, maxval)
         maxval = CUDA.shfl_sync(CUDA.FULL_MASK, maxval, 1)
 
         local_acc = zero(T)
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * step + 1
             @inbounds begin
-                muval = ψ[j + local_id]
+                muval = ψ[j+local_id]
                 costval = feature_cost_cuda(metric, data1, row_sums1, row_sqnorms1, row_means1, row_centered_sqnorms1, scale, tid_x, j + local_id, ncols)
             end
             local_acc += exp(muladd(costval, invreg, muval) - maxval)
@@ -136,12 +136,12 @@ function warp_logsumexp_cellsim_opt!(
         if Ntiles * step + local_id < M
             j = Ntiles * step + 1
             @inbounds begin
-                muval = ψ[j + local_id]
+                muval = ψ[j+local_id]
                 costval = feature_cost_cuda(metric, data1, row_sums1, row_sqnorms1, row_means1, row_centered_sqnorms1, scale, tid_x, j + local_id, ncols)
             end
             local_acc += exp(muladd(costval, invreg, muval) - maxval)
         end
-        local_acc = CUDA.reduce_warp(+, local_acc)
+        local_acc = CUDA.CUDACore.reduce_warp(+, local_acc)
         if local_id == 0
             output[tid_x] = log(marginal[tid_x]) - (log(local_acc) + maxval)
         end
@@ -186,10 +186,10 @@ function warp_logsumexp_cellsim_fused!(
         end
         m_local = T(-Inf)
         s_local = zero(T)
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * step + 1
             @inbounds begin
-                muval = θ[j + local_id]
+                muval = θ[j+local_id]
                 costval = feature_cost_cuda(metric, data1, row_sums1, row_sqnorms1, row_means1, row_centered_sqnorms1, scale, tid_x, j + local_id, ncols)
             end
             v = muladd(costval, invreg, muval)
@@ -203,7 +203,7 @@ function warp_logsumexp_cellsim_fused!(
         if Ntiles * step + local_id < M
             j = Ntiles * step + 1
             @inbounds begin
-                muval = θ[j + local_id]
+                muval = θ[j+local_id]
                 costval = feature_cost_cuda(metric, data1, row_sums1, row_sqnorms1, row_means1, row_centered_sqnorms1, scale, tid_x, j + local_id, ncols)
             end
             v = muladd(costval, invreg, muval)
@@ -246,9 +246,9 @@ function sinkhorn_cellsim(
     marginal2::CuArray{T},
     args::EOTArgs,
     frequency::Int=100;
-    return_cuda = false,
-    φ0::Union{CuArray{T}, typeof(Nothing)}=Nothing,
-    ψ0::Union{CuArray{T}, typeof(Nothing)}=Nothing
+    return_cuda=false,
+    φ0::Union{CuArray{T},typeof(Nothing)}=Nothing,
+    ψ0::Union{CuArray{T},typeof(Nothing)}=Nothing
 ) where T<:Real
     N = size(data1, 1)
     M = size(data2, 1)
@@ -284,7 +284,7 @@ function sinkhorn_cellsim(
         if (i - 1) % frequency == 0
             @cuda threads = threads blocks = blocks residual_cellsim_opt!(residual_cache, cost_cache, data1, data2, row_sums1, row_sqnorms1, row_means1, row_centered_sqnorms1, row_sums2, row_sqnorms2, row_means2, row_centered_sqnorms2, scale, metric, marginal1, φ, ψ, η, W∞)
             CUDA.synchronize()
-            
+
             residual_r = norm(residual_cache, 1)
             if args.verbose
                 ot_objective = sum(cost_cache)

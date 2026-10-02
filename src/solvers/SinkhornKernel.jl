@@ -25,7 +25,7 @@ function residual_opt!(output::CuDeviceVector{T}, cost_output::CuDeviceVector{T}
             pix1b = img1[3, tid_x]
             φi = φ[tid_x]
         end
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * warpsize() + 1
             @inbounds begin
                 pix2r = img2[1, j+local_id]
@@ -67,8 +67,8 @@ function residual_opt!(output::CuDeviceVector{T}, cost_output::CuDeviceVector{T}
             local_acc += exp(value)
             cost_acc += exp(value) * l2dist
         end
-        local_acc = CUDA.reduce_warp(+, local_acc)
-        cost_acc = CUDA.reduce_warp(+, cost_acc)
+        local_acc = CUDA.CUDACore.reduce_warp(+, local_acc)
+        cost_acc = CUDA.CUDACore.reduce_warp(+, cost_acc)
         if local_id == 0
             @inbounds begin
                 output[tid_x] = marginal[tid_x] - local_acc
@@ -110,7 +110,7 @@ function residual!(output::CuDeviceVector{T}, img1::CuDeviceMatrix{T},
         value = -(l2dist) / reg + φi + ψ[i+local_id]
         local_acc += exp(value)
     end
-    local_acc = CUDA.reduce_warp(+, local_acc)
+    local_acc = CUDA.CUDACore.reduce_warp(+, local_acc)
     if local_id == 0
         output[tid_x] = 1 / N - local_acc
     end
@@ -195,7 +195,7 @@ function warp_logsumexp_ct!(output::CuDeviceVector{T}, img1::CuDeviceMatrix{T},
             value = -(l2dist) / reg + ψ[i+local_id]
             maxval = max(value, maxval)
         end
-        maxval = CUDA.reduce_warp(max, maxval)
+        maxval = CUDA.CUDACore.reduce_warp(max, maxval)
         maxval = shfl_sync(CUDA.FULL_MASK, maxval, 1)
         local_acc = 0.0
         for i in 1:step:N
@@ -217,7 +217,7 @@ function warp_logsumexp_ct!(output::CuDeviceVector{T}, img1::CuDeviceMatrix{T},
             value = -(l2dist) / reg + ψ[i+local_id]
             local_acc += exp(value - maxval)
         end
-        local_acc2 = CUDA.reduce_warp(+, local_acc)
+        local_acc2 = CUDA.CUDACore.reduce_warp(+, local_acc)
         sync_warp()
         if local_id == 0
             output[tid_x] = -log(N) - (log(local_acc2) + maxval)
@@ -246,7 +246,7 @@ function warp_logsumexp_ct_opt!(output::CuDeviceVector{T}, img1::CuDeviceMatrix{
         pix1b = img1[3, tid_x]
         maxval = -Inf
 
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * warpsize() + 1
             @inbounds begin
                 pix2r = img2[1, j+local_id]
@@ -284,11 +284,11 @@ function warp_logsumexp_ct_opt!(output::CuDeviceVector{T}, img1::CuDeviceMatrix{
             end
             maxval = max(value, maxval)
         end
-        maxval = CUDA.reduce_warp(max, maxval)
+        maxval = CUDA.CUDACore.reduce_warp(max, maxval)
         maxval = CUDA.shfl_sync(CUDA.FULL_MASK, maxval, 1)
 
         local_acc = 0.0
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * warpsize() + 1
             @inbounds begin
                 pix2r = img2[1, j+local_id]
@@ -328,7 +328,7 @@ function warp_logsumexp_ct_opt!(output::CuDeviceVector{T}, img1::CuDeviceMatrix{
 
             local_acc += exp(value - maxval)
         end
-        local_acc = CUDA.reduce_warp(+, local_acc)
+        local_acc = CUDA.CUDACore.reduce_warp(+, local_acc)
         if local_id == 0
             output[tid_x] = log(marginal[tid_x]) - (log(local_acc) + maxval)
         end
@@ -362,7 +362,7 @@ function warp_logsumexp_ct_fused!(output::CuDeviceVector{T}, img1::CuDeviceMatri
         m_local = T(-Inf)
         s_local = T(0)
 
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * warpsize() + 1
             @inbounds begin
                 pix2r = img2[1, j+local_id]

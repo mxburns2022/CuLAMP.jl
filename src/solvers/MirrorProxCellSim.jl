@@ -21,7 +21,7 @@ function max_logsumexp_cellsim!(
             return
         end
         m_local = zero(T)
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * step + 1
             @inbounds costval = feature_cost_cuda(metric, data, row_sums, row_sqnorms, row_means, row_centered_sqnorms, scale, tid_x, j + local_id, ncols)
             m_local = max(m_local, costval)
@@ -31,7 +31,7 @@ function max_logsumexp_cellsim!(
             @inbounds costval = feature_cost_cuda(metric, data, row_sums, row_sqnorms, row_means, row_centered_sqnorms, scale, tid_x, j + local_id, ncols)
             m_local = max(m_local, costval)
         end
-        m_local = CUDA.reduce_warp(max, m_local)
+        m_local = CUDA.CUDACore.reduce_warp(max, m_local)
         if local_id == 0
             output[tid_x] = m_local
         end
@@ -66,7 +66,7 @@ function warp_min_reduce_cellsim!(
             return
         end
         m_local = T(Inf)
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * step + 1
             @inbounds begin
                 muval = θ[j+local_id]
@@ -82,7 +82,7 @@ function warp_min_reduce_cellsim!(
             end
             m_local = min(m_local, muladd(muval, c1, costval))
         end
-        m_local = CUDA.reduce_warp(min, m_local)
+        m_local = CUDA.CUDACore.reduce_warp(min, m_local)
         if local_id == 0
             output[tid_x] = m_local
         end
@@ -221,7 +221,7 @@ function residual_cellsim_c!(
             continue
         end
         @inbounds diff = θ[tid_x]
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * step + 1
             @inbounds begin
                 costval = feature_cost_cuda(metric, data, row_sums, row_sqnorms, row_means, row_centered_sqnorms, scale, j + local_id, tid_x, ncols)
@@ -243,8 +243,8 @@ function residual_cellsim_c!(
             local_acc += weight
             cost_acc += weight * costval
         end
-        local_acc = CUDA.reduce_warp(+, local_acc)
-        cost_acc = CUDA.reduce_warp(+, cost_acc)
+        local_acc = CUDA.CUDACore.reduce_warp(+, local_acc)
+        cost_acc = CUDA.CUDACore.reduce_warp(+, cost_acc)
         if local_id == 0
             @inbounds begin
                 output[tid_x] = local_acc
@@ -289,7 +289,7 @@ function warp_logsumexp_spp_sim_fused!(
         m_local = T(-Inf)
         s_local = zero(T)
 
-        for tile in 0:Ntiles-1
+        for tile in 0:(Ntiles-1)
             j = tile * step + 1
             @inbounds begin
                 muval = θ[j+local_id]

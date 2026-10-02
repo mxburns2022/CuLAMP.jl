@@ -6,6 +6,15 @@ using StructTypes
 using ArgParse
 # using DelimitedFiles
 using Images
+@inline function reduce_warp(op, val)
+    offset = 0x00000001
+    while offset < warpsize()
+        val = op(val, shfl_down_sync(0xffffffff, val, offset))
+        offset <<= 1
+    end
+
+    return val
+end
 
 @kwdef struct EOTProblem{TA,TM,R}
     η::R
@@ -51,8 +60,8 @@ end
 
 @inline
 function dual_gradient!(output::TA, x::TA, prob::EOTProblem) where TA
-    grad_cache1 = softmax(-prob.W / prob.η .+ x[1:prob.N] .+ x[prob.N+1:end]', dims=2)
-    grad_cache2 = softmax(-prob.W / prob.η .+ x[1:prob.N] .+ x[prob.N+1:end]', dims=1)'
+    grad_cache1 = softmax(-prob.W / prob.η .+ x[1:prob.N] .+ x[(prob.N+1):end]', dims=2)
+    grad_cache2 = softmax(-prob.W / prob.η .+ x[1:prob.N] .+ x[(prob.N+1):end]', dims=1)'
     output .= vcat(grad_cache1, grad_cache2)
     output .-= prob.b
 end
@@ -68,21 +77,21 @@ end
 function DHa(theta1, theta2, calpha)
     return calpha' * (
         (theta1 .+ 1) / 2 .* log.((theta1 .+ 1 .+ 1e-30) ./ (theta2 .+ 1 .+ 1e-30)) +
-        (1 .- theta1) / 2 .* log.((1 .- theta1 .+ 1e-30) ./ (1 .- theta2 .+ 1e-30))
+            (1 .- theta1) / 2 .* log.((1 .- theta1 .+ 1e-30) ./ (1 .- theta2 .+ 1e-30))
     )
 end
 # function f(p, prob::EOTProblem)
 #     return dot(p, prob.W)
 # end
 function φ(x, prob::EOTProblem)
-    return sum(logsumexp(-prob.W / prob.η .+ x[1:prob.N] .+ x[prob.N+1:end]')) - dot(prob.b, x)
+    return sum(logsumexp(-prob.W / prob.η .+ x[1:prob.N] .+ x[(prob.N+1):end]')) - dot(prob.b, x)
 end
 function φ(u::TA, v::TA, r::TA, c::TA, W::TM, η::R) where {TA,TM,R}
     return -η * sum(logsumexp(-(W) / η .- u .- v')) - η * dot(r, u) - η * dot(c, v)
 end
 
 function get_p(x, prob::EOTProblem)
-    return softmax(-prob.W / prob.η .+ x[1:prob.N] .+ x[prob.N+1:end]')
+    return softmax(-prob.W / prob.η .+ x[1:prob.N] .+ x[(prob.N+1):end]')
 end
 
 function read_args_json(fpath::String)
@@ -135,10 +144,10 @@ function generate_random_ot(N, M, rng)
 end
 function neg_entropy(x::TA; dims=[]) where TA
     return sum(map(y -> if y > 1e-30
-                y * log(y)
-            else
-                0.0
-            end, x), dims=dims)
+        y * log(y)
+    else
+        0.0
+    end, x), dims=dims)
 end
 
 function get_euclidean_distance(height::Int, width::Int; p::Float64=2.0)
