@@ -119,6 +119,9 @@ end
     "file2"
     help = "Path to target input image file (column marginal)"
     required = true
+    "--fp32"
+    help = "Enable Float32 computation (otherwise uses Float64)"
+    action = :store_true
     "--output1"
     help = "Output path for color mapped image 1"
     required = true
@@ -170,13 +173,13 @@ end
     required = true
 end
 function run_dot(parsed_args)
-    args = read_args_json(parsed_args["settings"])
-    size = (parsed_args["height"], parsed_args["width"])
     if args["fp32"]
         dtype = Float32
     else
         dtype = Float64
     end
+    args = read_args_json(parsed_args["settings"]; dtype=dtype)
+    size = (parsed_args["height"], parsed_args["width"])
     marginal1, h, w, N = read_dotmark_data(parsed_args["file1"], size; dtype=dtype)
     marginal2, h2, w2, N2 = read_dotmark_data(parsed_args["file2"], size; dtype=dtype)
     @assert h == h2 && w == w2 && N == N2
@@ -220,12 +223,17 @@ function run_dot(parsed_args)
 end
 
 function run_ctransfer(parsed_args)
-    args = read_args_json(parsed_args["settings"])
+    if parsed_args["fp32"]
+        dtype = Float32
+    else
+        dtype = Float64
+    end
+    args = read_args_json(parsed_args["settings"]; dtype=dtype)
     size = (parsed_args["height"], parsed_args["width"])
     if parsed_args["algorithm"] == "lamp"
-        extragradient_color_transfer(parsed_args["file1"], parsed_args["file2"], parsed_args["output1"], parsed_args["output2"], size, args, parsed_args["frequency"], parsed_args["p"])
+        extragradient_color_transfer(parsed_args["file1"], parsed_args["file2"], parsed_args["output1"], parsed_args["output2"], size, args, parsed_args["frequency"], parsed_args["p"]; dtype=dtype)
     elseif parsed_args["algorithm"] == "sinkhorn"
-        sinkhorn_color_transfer(parsed_args["file1"], parsed_args["file2"], parsed_args["output1"], parsed_args["output2"], size, args, parsed_args["frequency"], parsed_args["p"])
+        sinkhorn_color_transfer(parsed_args["file1"], parsed_args["file2"], parsed_args["output1"], parsed_args["output2"], size, args, parsed_args["frequency"], parsed_args["p"]; dtype=dtype)
     end
 end
 

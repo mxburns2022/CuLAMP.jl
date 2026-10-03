@@ -85,9 +85,9 @@ function get_p(x, prob::EOTProblem)
     return softmax(-prob.W / prob.η .+ x[1:prob.N] .+ x[(prob.N+1):end]')
 end
 
-function read_args_json(fpath::String)
+function read_args_json(fpath::String; dtype::Type=Float64)
     json_string = read(fpath, String)
-    settings = JSON3.read(json_string, EOTArgs)
+    settings = JSON3.read(json_string, EOTArgs{dtype})
     return settings
 end
 function softmax(x::AbstractArray{T}; normalize_values=true, dims=[], norm_dims=Nothing) where T<:Real
@@ -134,11 +134,11 @@ function generate_random_ot(N, M, rng; dtype::Type=Float64)
     optimum = emd2(r, c, W)
     return r, c, W, optimum
 end
-function neg_entropy(x::TA; dims=[]) where TA
-    return sum(map(y -> if y > 1e-30
+function neg_entropy(x::AbstractArray{R}; dims=[]) where {R<:Real}
+    return sum(map(y -> if y > 0.0
         y * log(y)
     else
-        0.0
+        R(0.0)
     end, x), dims=dims)
 end
 

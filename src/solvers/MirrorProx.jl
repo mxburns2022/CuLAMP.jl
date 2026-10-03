@@ -243,7 +243,7 @@ function warp_logsumexp_fused!(output::CuDeviceVector{T}, Wt::CuDeviceMatrix{T},
     N_outer = Int(ceil(M / nwarps))
     local_id = (threadIdx().x - 1) % step
     # Precompute scalars to avoid divisions in the inner loop
-    α = (0.5 * st) / (reg * Winf)
+    α = (st) / 2(reg * Winf)
     invreg = one(T) / reg
     @inbounds for _ in 1:N_outer
         if tid_x > M
@@ -400,8 +400,7 @@ function LAMP(r::CuArray{R},
     args::EOTArgs{R},
     frequency::Int=50;
     log_output::Bool=false,
-    _θ=Nothing,
-    s0=0.0
+    _θ=Nothing
 ) where {R}
     W∞ = norm(W, Inf)
     # ε /= W∞
@@ -435,11 +434,12 @@ function LAMP(r::CuArray{R},
         @cuda threads = threads blocks = warp_blocks residual_c!(residual_storage, r, W, θ, sumvals, η, s, W∞)
     end
     # ηp = 0.1
-    ηt = Inf
+    ηt = R(Inf)
     τp = args.tau_p
     minv = tanh(-args.B / 2)
     maxv = tanh(args.B / 2)
-    infeas(ν, ηt, 1.0)
+    onev = R(1.0)
+    infeas(ν, ηt, onev)
     calpha = (c .+ args.alpha / n)
 
     loglist = []
@@ -452,7 +452,7 @@ function LAMP(r::CuArray{R},
             break
         end
         if (i - 1) % frequency == 0
-            p = softmax(-(W * 0.5 / W∞ .+ ν') ./ ηt, norm_dims=2)
+            p = softmax(-(W / 2W∞ .+ ν') ./ ηt, norm_dims=2)
             obj = dot(W, round(r .* p, r, c))
             # pr = r .* p
             primal_value = primalv(p, W, W∞, ηp, r, c)
@@ -466,7 +466,7 @@ function LAMP(r::CuArray{R},
                 break
             end
         end
-        @cuda threads = threads blocks = linear_blocks update_θ_residual(θ̄, θ, residual_storage, c, eta_mu, args.tau_mu * args.eta_mu, false, minv, maxv, 1.0)
+        @cuda threads = threads blocks = linear_blocks update_θ_residual(θ̄, θ, residual_storage, c, eta_mu, args.tau_mu * args.eta_mu, false, minv, maxv, onev)
         eta_prev = ηt
         ηt = 1 / (τp + (1 / ηt) * (1 - ηp))
 
@@ -478,9 +478,9 @@ function LAMP(r::CuArray{R},
         # if args.eta_p == 0
         #     ηp = 1 / (i)
         # end
-        infeas(ν̄, ηt, 1.0)
+        infeas(ν̄, ηt, onev)
         diffterm = dot(ν ./ ηt - ν̄ ./ ηt, c - residual_storage)
-        @cuda threads = threads blocks = linear_blocks update_θ_residual(θ, θ, residual_storage, c, eta_mu, args.eta_mu, false, minv, maxv, 1.0)
+        @cuda threads = threads blocks = linear_blocks update_θ_residual(θ, θ, residual_storage, c, eta_mu, args.eta_mu, false, minv, maxv, onev)
         ν = (1 - τp * ηt) * ν + τp * ηt * θ̄
         if log_output
             val2 = DHa(θ̄, θ, calpha) + KL(ν̄, ν, ηt, ηt, r, W, W∞)
@@ -489,12 +489,12 @@ function LAMP(r::CuArray{R},
         θ .= clamp.(θ, minv, maxv)
 
         diffterm = dot(ν - ν̄, c - residual_storage)
-        infeas(ν, ηt, 1.0)
+        infeas(ν, ηt, onev)
         if log_output
             push!(loglist, (iteration=i, cross_term_1=val1, cross_term_2=val2))
         end
     end
-    p = softmax(-(W * 0.5 ./ W∞ .+ ν') ./ ηt, norm_dims=2)
+    p = softmax(-(W ./ 2W∞ .+ ν') ./ ηt, norm_dims=2)
     if log_output
         return r .* p, θ, loglist
     end
@@ -525,15 +525,15 @@ function LAMP(r::AbstractArray{R},
 
     eta_mu = (c .+ args.alpha / n) ./ (args.tau_mu)
     st = 0
-    ηt = Inf
+    ηt = R(Inf)
     τp = args.tau_p
     println("time(s),iter,infeas,ot_objective,primal,dual,solver")
     time_start = time_ns()
     function infeas(θ, ηt)
 
-        maximum!(maxvals, -(0.5W / W∞ .+ θ') ./ ηt)
-        sum!(sumvals, exp.(-(0.5W / W∞ .+ θ') ./ ηt .- maxvals))
-        sum!(residual_storage', exp.(-(0.5W ./ W∞ .+ θ') ./ ηt .- maxvals .- log.(sumvals) .+ log.(r)))
+        maximum!(maxvals, -(W / 2W∞ .+ θ') ./ ηt)
+        sum!(sumvals, exp.(-(W / 2W∞ .+ θ') ./ ηt .- maxvals))
+        sum!(residual_storage', exp.(-(W ./ 2W∞ .+ θ') ./ ηt .- maxvals .- log.(sumvals) .+ log.(r)))
         # return 
     end
     γ = zeros(R, n)
@@ -546,7 +546,7 @@ function LAMP(r::AbstractArray{R},
 
 
         if (i - 1) % frequency == 0
-            p = softmax(-(0.5W / W∞ .+ ν') ./ ηt, norm_dims=2)
+            p = softmax(-(W / 2W∞ .+ ν') ./ ηt, norm_dims=2)
             pr = r .* p
             feas = norm(sum(pr, dims=1)' - c, 1)
             obj = dot(round(pr, r, c), W)
@@ -570,7 +570,7 @@ function LAMP(r::AbstractArray{R},
         clamp!(θ, tanh(-args.B / 2), tanh(args.B / 2))
         ν .= ν + τp * ηt * (θ̄ - ν)
     end
-    p = softmax(-(0.5W / W∞ .+ ν') ./ ηt, norm_dims=2)
+    p = softmax(-(W / 2W∞ .+ ν') ./ ηt, norm_dims=2)
     return r .* p, θ
 end
 

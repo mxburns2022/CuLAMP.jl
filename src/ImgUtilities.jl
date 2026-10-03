@@ -41,9 +41,9 @@ function load_rgb(filepath::String; cuda::Bool=false, resolution::Tuple=(), unif
         Ub = kde(img[3, :], npoints=nearest_pow2)
         normalize!(Ub.density)
 
-        marginal = normalize(pdf(Ur, img[1, :]) + pdf(Ug, img[2, :]) + pdf(Ub, img[3, :]), 1)
+        marginal = dtype.(normalize(pdf(Ur, img[1, :]) + pdf(Ug, img[2, :]) + pdf(Ub, img[3, :]), 1))
     else
-        marginal = ones(size(img, 2)) / size(img, 2)
+        marginal = ones(dtype, size(img, 2)) / size(img, 2)
     end
     if cuda
         return CuArray(img), original_dims, CuArray(marginal)
