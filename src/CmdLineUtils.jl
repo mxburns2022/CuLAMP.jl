@@ -81,6 +81,9 @@ end
     help = "Image width"
     default = typemax(Int)
     arg_type = Int
+    "--fp32"
+    help = "Enable Float32 computation (otherwise uses Float64)"
+    action = :store_true
     "--potential-out"
     help = "Output path for dual potentials. Order is (1) Simplex dual (if using extragradient), (2) Potential for Row Marginal, (3) Potential for Column Marginal>"
     default = ""
@@ -169,17 +172,22 @@ end
 function run_dot(parsed_args)
     args = read_args_json(parsed_args["settings"])
     size = (parsed_args["height"], parsed_args["width"])
-    marginal1, h, w, N = read_dotmark_data(parsed_args["file1"], size)
-    marginal2, h2, w2, N2 = read_dotmark_data(parsed_args["file2"], size)
+    if args["fp32"]
+        dtype = Float32
+    else
+        dtype = Float64
+    end
+    marginal1, h, w, N = read_dotmark_data(parsed_args["file1"], size; dtype=dtype)
+    marginal2, h2, w2, N2 = read_dotmark_data(parsed_args["file2"], size; dtype=dtype)
     @assert h == h2 && w == w2 && N == N2
     # mix it with a little bit of the uniform distribution for stability
     r = normalize(marginal1 .+ 1e-6, 1)
     c = normalize(marginal2 .+ 1e-6, 1)
     if !parsed_args["kernel"]
         if parsed_args["weights"] != ""
-            W = read_weights(parsed_args["weights"])
+            W = read_weights(parsed_args["weights"], dtype=dtype)
         else
-            W = get_euclidean_distance(h, w; p=parsed_args["p"])
+            W = get_euclidean_distance(h, w; p=parsed_args["p"], dtype=dtype)
         end
         W∞ = norm(W, Inf)
         # args.eta_p /= W∞
@@ -195,7 +203,7 @@ function run_dot(parsed_args)
         r = CuArray(r)
         c = CuArray(c)
         locations = zeros(Float64, 3, h * w)
-        for i in 1:h*w
+        for i in 1:(h*w)
             locations[1, i] = (i - 1) ÷ w
             locations[2, i] = (i - 1) % w
         end

@@ -27,12 +27,12 @@ function restore_image(img::AbstractArray{T}, original_shape::Tuple) where T<:Re
     return reshape(img, (channels, w, h))
 end
 
-function load_rgb(filepath::String; cuda::Bool=false, resolution::Tuple=(), uniform_marginal=false)
-    img = Float64.(channelview(imresize(load(filepath), resolution, ratio=1.0)))
+function load_rgb(filepath::String; cuda::Bool=false, resolution::Tuple=(), uniform_marginal=false, dtype::Type=Float64)
+    img = dtype.(channelview(imresize(load(filepath), resolution, ratio=1.0)))
 
     img, original_dims = flatten_image(img)
     if !uniform_marginal
-        nearest_log2 = Base.ceil(log2(Float64(size(img, 2))))
+        nearest_log2 = Base.ceil(log2(dtype(size(img, 2))))
         nearest_pow2 = Int(2^nearest_log2)
         Ur = kde(img[1, :], npoints=nearest_pow2)
         normalize!(Ur.density)

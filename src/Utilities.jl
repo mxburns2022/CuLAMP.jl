@@ -6,15 +6,6 @@ using StructTypes
 using ArgParse
 # using DelimitedFiles
 using Images
-@inline function reduce_warp(op, val)
-    offset = 0x00000001
-    while offset < warpsize()
-        val = op(val, shfl_down_sync(0xffffffff, val, offset))
-        offset <<= 1
-    end
-
-    return val
-end
 
 @kwdef struct EOTProblem{TA,TM,R}
     η::R
@@ -31,7 +22,7 @@ end
     tau_mu::R = 1.0
     alpha::R = 0.01
     B::R = 1.0
-    epsilon::R = 1e-4
+    epsilon::Real = 1e-4
     anneal_mult::R = 0.95
     itermax::Int = 10_000
     inner_iter::Int = 10
@@ -135,10 +126,11 @@ function polyroot(a, b, c, γ)
     end
     return x
 end
-function generate_random_ot(N, M, rng)
-    r = normalize(rand(rng, M), 1)
-    c = normalize(rand(rng, N), 1)
-    W = abs.(randn(rng, M, N))
+function generate_random_ot(N, M, rng; dtype::Type=Float64)
+    @assert dtype <: Real
+    r = normalize(rand(rng, dtype, M), 1)
+    c = normalize(rand(rng, dtype, N), 1)
+    W = abs.(randn(rng, dtype, M, N))
     optimum = emd2(r, c, W)
     return r, c, W, optimum
 end
@@ -150,9 +142,10 @@ function neg_entropy(x::TA; dims=[]) where TA
     end, x), dims=dims)
 end
 
-function get_euclidean_distance(height::Int, width::Int; p::Float64=2.0)
+function get_euclidean_distance(height::Int, width::Int; p::Float64=2.0, dtype::Type=Float64)
+    @assert dtype <: Real
     N = height * width
-    W = zeros(N, N)
+    W = zeros(dtype, N, N)
     for (i, j) in product(0:(N-1), 0:(N-1))
         if p < 10
             W[i+1, j+1] = (abs(i ÷ height - j ÷ height)^p + abs(i % height - j % height)^p)
@@ -170,8 +163,9 @@ function round(γ::AbstractMatrix{T}, μ::AbstractArray{T}, ν::AbstractArray{T}
     γ̂ = γ⁺⁺ + rμ * rν' / norm(rμ, 1)
     return γ̂
 end
-function read_dotmark_data(fpath::String, sizes::Tuple{Int,Int})
-    input_data = Matrix(CSV.read(fpath, header=false, DataFrame))
+function read_dotmark_data(fpath::String, sizes::Tuple{Int,Int}; dtype::Type=Float64)
+    @assert dtype <: Real
+    input_data = Matrix(dtype, CSV.read(fpath, header=false, DataFrame))
     # println(size(input_data), sizes)
     h = min(sizes[1], size(input_data, 1))
     w = min(sizes[2], size(input_data, 2))
@@ -181,7 +175,8 @@ function read_dotmark_data(fpath::String, sizes::Tuple{Int,Int})
     return marginal, h, w, N
 end
 
-function read_weights(fpath::String)
-    W = Float64.(Matrix(CSV.read(fpath, header=false, DataFrame)))
+function read_weights(fpath::String; dtype::Type=Float64)
+    @assert dtype <: Real
+    W = dtype.(Matrix(CSV.read(fpath, header=false, DataFrame)))
     return W
 end
